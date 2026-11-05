@@ -232,7 +232,7 @@ export default function Play() {
       for (let i = 0; i < results.length; i++) {
         if (cancelled) return;
         const r = results[i];
-        if (r.audioUrl) await playClip(r.audioUrl);
+        if (r.audioUrl) await playClip(r.audioUrl, r.sabotage?.type);
         if (cancelled) return;
         setRevealed(i + 1);
         await new Promise((res) => window.setTimeout(res, 900));
@@ -437,6 +437,16 @@ export default function Play() {
                       {myResult?.breakdown?.heardNote ||
                         (myResult?.silent ? "No sound heard" : "")}
                     </div>
+                    {myResult?.sabotage && (
+                      <div className="mt-1 text-[10px] font-black uppercase tracking-widest text-red">
+                        🎭 {myResult.sabotage.label}
+                      </div>
+                    )}
+                    {myResult?.wheel && !myResult?.sabotage && (
+                      <div className="mt-1 text-[10px] font-black uppercase tracking-widest text-gold">
+                        🎡 {myResult.wheel.label}
+                      </div>
+                    )}
                     {rank > 0 && (
                       <div className="mt-2 inline-flex rounded-full bg-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-cream/80">
                         #{rank} of {results.length}

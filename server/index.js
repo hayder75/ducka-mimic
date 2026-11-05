@@ -103,6 +103,14 @@ function roomSnapshot(room) {
     state: room.state,
     round: room.roundNumber,
     solo: room.solo,
+    pending: room.pending
+      ? {
+          kind: room.pending.kind,
+          label: room.pending.label,
+          playerId: room.pending.playerId,
+          playerName: room.players.get(room.pending.playerId)?.name || "",
+        }
+      : null,
     players: [...room.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
@@ -116,6 +124,18 @@ function roomSnapshot(room) {
 }
 
 const AVATARS = ["🦆", "🐯", "🐼", "🦊", "🐸", "🐵", "🐧", "🦁", "🐨", "🐰"];
+
+// order must match the wheel segments in src/components/Wheel.tsx
+const WHEEL = [
+  { kind: "points", value: 20, label: "+20 points" },
+  { kind: "double", value: 2, label: "Double next score" },
+  { kind: "sabotage", value: "echo", label: "Echo sabotage" },
+  { kind: "sabotage", value: "fart", label: "Fart takeover" },
+  { kind: "points", value: 30, label: "+30 points" },
+  { kind: "sabotage", value: "chop", label: "Chopped take" },
+  { kind: "sabotage", value: "pitch", label: "Pitch shift" },
+  { kind: "nothing", label: "Nothing" },
+];
 
 function addPlayer(room, socket, name) {
   const slot = room.players.size % AVATARS.length;
@@ -242,6 +262,26 @@ async function runRound(io, room) {
       silent: !sub,
     });
   }
+  // apply the wheel to the player it landed on
+  const pending = room.pending;
+  if (pending) {
+    for (const r of results) {
+      if (r.id !== pending.playerId) continue;
+      if (pending.kind === "points") {
+        r.total += Number(pending.value) || 0;
+        r.wheel = { kind: "points", label: pending.label };
+      } else if (pending.kind === "double") {
+        r.total *= Number(pending.value) || 2;
+        r.wheel = { kind: "double", label: pending.label };
+      } else if (pending.kind === "sabotage") {
+        r.total = Math.max(0, r.total - 10);
+        r.sabotage = { type: pending.value, label: pending.label };
+        r.wheel = { kind: "sabotage", label: pending.label };
+      }
+    }
+    room.pending = null;
+  }
+
   results.sort((a, b) => a.total - b.total); // ascending: winner revealed last
 
   room.state = "results";
@@ -370,6 +410,46 @@ io.on("connection", (socket) => {
     room.round.demoDone = true;
   });
 
+  socket.on("stage:wheel", () => {
+    const room = roomOf();
+    if (!room || role !== "stage") return;
+    if (room.pending) {
+      socket.emit("error:msg", { message: "The wheel already spun this round." });
+      return;
+    }
+    if (!room.players.size) return;
+
+    const index = Math.floor(Math.random() * WHEEL.length);
+    const segment = WHEEL[index];
+    const pool = [...room.players.values()];
+    const player =
+      segment.kind === "nothing"
+        ? null
+        : pool[Math.floor(Math.random() * pool.length)];
+
+    room.pending = {
+      kind: segment.kind,
+      value: segment.value ?? null,
+      label: segment.label,
+      playerId: player ? player.id : null,
+    };
+
+    io.to(room.code).emit("wheel:result", {
+      index,
+      segment,
+      player: player
+        ? {
+            id: player.id,
+            name: player.name,
+            avatar: player.avatar,
+            avatarSlot: player.avatarSlot,
+          }
+        : null,
+    });
+    io.to(room.code).emit("room:update", roomSnapshot(room));
+    console.log(`[room ${room.code}] wheel: ${segment.label} -> ${player?.name || "-"}`);
+  });
+
   socket.on("stage:skip", () => {
     const room = roomOf();
     if (!room || role !== "stage") return;
@@ -388,6 +468,7 @@ io.on("connection", (socket) => {
     room.round = null;
     room.roundNumber = 0;
     room.pool = [];
+    room.pending = null;
     fs.rm(path.join(RECORDINGS, room.code), { recursive: true, force: true }, () => {});
     for (const p of room.players.values()) {
       p.total = 0;

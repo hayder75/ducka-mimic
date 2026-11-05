@@ -41,6 +41,8 @@ export type ResultView = {
     heardNote: string;
   } | null;
   audioUrl?: string | null;
+  sabotage?: { type: string; label: string } | null;
+  wheel?: { kind: string; label: string } | null;
   silent: boolean;
 };
 

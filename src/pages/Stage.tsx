@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import confetti from "canvas-confetti";
 import QRCode from "qrcode";
 import Avatar from "../components/Avatar";
+import Wheel, { type WheelData } from "../components/Wheel";
 import Stage3D from "../components/Stage3D";
 import {
   socket,
@@ -43,6 +44,9 @@ export default function Stage() {
   const [results, setResults] = useState<ResultView[]>([]);
   const [revealed, setRevealed] = useState(0);
   const [playing, setPlaying] = useState<ResultView | null>(null);
+  const [wheel, setWheel] = useState<WheelData | null>(null);
+  const [wheelOpen, setWheelOpen] = useState(false);
+  const [pending, setPending] = useState<any>(null);
   const [qr, setQr] = useState<string>("");
   const [toast, setToast] = useState<string>("");
   const [level, setLevel] = useState(0);
@@ -67,6 +71,7 @@ export default function Stage() {
     const onUpdate = (snap: any) => {
       setPlayers(snap.players || []);
       setSolo(Boolean(snap.solo));
+      setPending(snap.pending || null);
     };
     const onNext = (p: any) => {
       setSound(p.sound);
@@ -134,6 +139,10 @@ export default function Stage() {
       setCode("");
     };
     const onError = (p: any) => showToast(p?.message || "Something went wrong");
+    const onWheel = (p: any) => {
+      setWheel(p);
+      setWheelOpen(true);
+    };
     const onLevel = (p: any) => {
       if (!p?.id) return;
       // mutable ref: no React re-render for every mic packet
@@ -155,6 +164,7 @@ export default function Stage() {
     socket.on("room:closed", onRoomClosed);
     socket.on("error:msg", onError);
     socket.on("player:level", onLevel);
+    socket.on("wheel:result", onWheel);
     socket.on("connect", onConnect);
 
     return () => {
@@ -169,6 +179,7 @@ export default function Stage() {
       socket.off("room:closed", onRoomClosed);
       socket.off("error:msg", onError);
       socket.off("player:level", onLevel);
+      socket.off("wheel:result", onWheel);
       socket.off("connect", onConnect);
     };
   }, [showToast]);
@@ -186,7 +197,7 @@ export default function Stage() {
         if (cancelled) return;
         const r = results[i];
         setPlaying(r);
-        if (r.audioUrl) await playClip(r.audioUrl);
+        if (r.audioUrl) await playClip(r.audioUrl, r.sabotage?.type);
         if (cancelled) return;
         setRevealed(i + 1);
         setPlaying(null);
@@ -358,8 +369,22 @@ export default function Stage() {
         onSkip={skip}
         onNext={startRound}
         onReset={resetGame}
+        onWheel={() => socket.emit("stage:wheel")}
+        canWheel={!pending && players.length > 0}
         disabled={phase === "home" || phase === "lobby" || phase === "results"}
       />
+
+      {pending && phase !== "home" && (
+        <div className="absolute inset-x-0 bottom-[10%] z-20 flex justify-center px-6">
+          <div className="rounded-full border border-gold/30 bg-black/70 px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-gold backdrop-blur">
+            🎡 Next · {pending.playerName} · {pending.label}
+          </div>
+        </div>
+      )}
+
+      {wheelOpen && wheel && (
+        <Wheel data={wheel} onClose={() => setWheelOpen(false)} />
+      )}
 
       {toast && phase !== "lobby" && (
         <div className="absolute bottom-[12%] left-1/2 z-50 -translate-x-1/2 rounded-full bg-red px-5 py-2 text-sm font-bold text-white shadow-lg">
@@ -404,12 +429,16 @@ function Footer({
   onSkip,
   onNext,
   onReset,
+  onWheel,
+  canWheel,
   disabled,
 }: {
   phase: Phase;
   onSkip: () => void;
   onNext: () => void;
   onReset: () => void;
+  onWheel: () => void;
+  canWheel: boolean;
   disabled: boolean;
 }) {
   return (
@@ -420,6 +449,13 @@ function Footer({
 
       {phase === "results" ? (
         <div className="flex items-center gap-2">
+          <button
+            onClick={onWheel}
+            disabled={!canWheel}
+            className="rounded-full border border-gold/40 bg-gold/10 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest text-gold transition hover:bg-gold/20 disabled:opacity-30"
+          >
+            🎡 Spin
+          </button>
           <button
             onClick={onReset}
             className="rounded-full border border-white/10 bg-black/40 px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted backdrop-blur transition hover:border-white/25 hover:text-ink"

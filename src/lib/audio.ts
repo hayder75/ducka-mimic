@@ -218,18 +218,58 @@ function mixToMono(buffer: AudioBuffer): Float32Array {
 }
 
 /** Play an uploaded take through the unlocked AudioContext. */
-export async function playClip(url: string, maxMs = 9000): Promise<void> {
+export async function playClip(
+  url: string,
+  effect?: string | null,
+  maxMs = 9000
+): Promise<void> {
   const c = audioContext();
   if (c.state === "suspended") await c.resume();
+
+  if (effect === "fart") {
+    fart();
+    await new Promise((r) => setTimeout(r, 900));
+    return;
+  }
+
   try {
     const res = await fetch(url);
     if (!res.ok) return;
     const data = await res.arrayBuffer();
     const buffer = await c.decodeAudioData(data);
+    const now = c.currentTime;
+
     await new Promise<void>((resolve) => {
+      if (effect === "chop") {
+        const dur = Math.min(buffer.duration, 6);
+        for (let t = 0; t < dur; t += 0.24) {
+          const src = c.createBufferSource();
+          src.buffer = buffer;
+          src.connect(c.destination);
+          src.start(now + t, t, 0.12);
+        }
+        setTimeout(resolve, dur * 1000 + 200);
+        return;
+      }
+
       const src = c.createBufferSource();
       src.buffer = buffer;
-      src.connect(c.destination);
+      if (effect === "pitch") src.playbackRate.value = 1.45;
+
+      if (effect === "echo") {
+        const delay = c.createDelay(0.5);
+        delay.delayTime.value = 0.18;
+        const fb = c.createGain();
+        fb.gain.value = 0.38;
+        src.connect(c.destination);
+        src.connect(delay);
+        delay.connect(fb);
+        fb.connect(delay);
+        delay.connect(c.destination);
+      } else {
+        src.connect(c.destination);
+      }
+
       src.onended = () => resolve();
       src.start();
       window.setTimeout(resolve, maxMs);
@@ -237,6 +277,26 @@ export async function playClip(url: string, maxMs = 9000): Promise<void> {
   } catch {
     /* a broken take should never block the reveal */
   }
+}
+
+/** Synthesized fart, for the sabotage. */
+export function fart(): void {
+  const c = audioContext();
+  const t = c.currentTime;
+  const osc = c.createOscillator();
+  const gain = c.createGain();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(120, t);
+  osc.frequency.exponentialRampToValueAtTime(48, t + 0.55);
+  osc.frequency.exponentialRampToValueAtTime(80, t + 0.7);
+  osc.frequency.exponentialRampToValueAtTime(40, t + 0.95);
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(0.22, t + 0.03);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 1);
+  osc.connect(gain);
+  gain.connect(c.destination);
+  osc.start(t);
+  osc.stop(t + 1.05);
 }
 
 /* ------------------------------------------------------------------ */

@@ -97,10 +97,39 @@ check(
   (results.players || []).every((p) => p.total >= 0)
 );
 
+// wheel: spin, check the broadcast, then verify it is applied next round
+const wheelPromise = once(stage, "wheel:result", 10000);
+stage.emit("stage:wheel");
+const wheel = await wheelPromise;
+check("wheel returns a segment", typeof wheel.index === "number");
+check("wheel has a label", Boolean(wheel.segment?.label));
+
 const nextPromise = once(stage, "round:next", 15000);
 stage.emit("stage:start");
 const next = await nextPromise;
 check("next round picks another sound", next.sound.id !== results.sound.id);
+
+// submit again and verify the wheel effect was applied to its target
+const results2Promise = once(stage, "round:results", 40000);
+stage.emit("stage:demoDone");
+await once(stage, "round:countdown");
+await once(stage, "round:record");
+players[0].emit("player:submit", { score: 80 });
+players[1].emit("player:submit", { score: 40 });
+const results2 = await results2Promise;
+const target = wheel.player ? results2.results.find((r) => r.id === wheel.player.id) : null;
+
+let expectedOk = true;
+if (target) {
+  if (wheel.segment.kind === "points") {
+    expectedOk = Boolean(target.wheel);
+  } else if (wheel.segment.kind === "double") {
+    expectedOk = target.wheel?.kind === "double";
+  } else if (wheel.segment.kind === "sabotage") {
+    expectedOk = Boolean(target.sabotage);
+  }
+}
+check("wheel effect applied next round", expectedOk, wheel.segment.label);
 
 await wait(300);
 stage.emit("stage:skip");
