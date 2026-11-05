@@ -1,0 +1,35 @@
+{
+  "categories": [
+    { "id": "test", "name": "Test tones" },
+    { "id": "funny", "name": "Funny expressions" },
+    { "id": "celebrity", "name": "Celebrity voices" },
+    { "id": "reaction", "name": "Reactions" },
+    { "id": "sound", "name": "Sounds & effects" }
+  ],
+  "sounds": {
+    "test_three_notes.wav": {
+      "title": "Three notes",
+      "subtitle": "Hum it back",
+      "category": "test",
+      "difficulty": "easy"
+    },
+    "test_sweep.wav": {
+      "title": "The sweep",
+      "subtitle": "Low to high, one breath",
+      "category": "test",
+      "difficulty": "medium"
+    },
+    "test_double_beep.wav": {
+      "title": "Double beep",
+      "subtitle": "Two short hits",
+      "category": "test",
+      "difficulty": "easy"
+    },
+    "test_rise.wav": {
+      "title": "The rise",
+      "subtitle": "Four notes up",
+      "category": "test",
+      "difficulty": "medium"
+    }
+  }
+}

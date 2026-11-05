@@ -1,0 +1,40 @@
+{
+  "name": "ducka-mimic",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Ducka Labs — Amharic mimic party game for streamers",
+  "scripts": {
+    "dev": "concurrently -n server,web -c red,cyan \"node server/index.js\" \"vite\"",
+    "dev:server": "node server/index.js",
+    "dev:web": "vite",
+    "build": "tsc -b && vite build",
+    "start": "NODE_ENV=production node server/index.js",
+    "scan-audio": "node scripts/scan-audio.mjs",
+    "test:e2e": "node scripts/e2e.mjs"
+  },
+  "dependencies": {
+    "canvas-confetti": "^1.9.3",
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@types/three": "^0.187.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.2",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7"
+  }
+}
