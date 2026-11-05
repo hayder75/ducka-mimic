@@ -33,7 +33,14 @@ export type ResultView = {
   score: number;
   bonus: number;
   total: number;
-  breakdown: { pitch: number; rhythm: number; sustain: number; heardNote: string } | null;
+  breakdown: {
+    pitch: number;
+    rhythm: number;
+    sustain: number;
+    attacks: number;
+    heardNote: string;
+  } | null;
+  audioUrl?: string | null;
   silent: boolean;
 };
 

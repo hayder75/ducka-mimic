@@ -18,6 +18,8 @@ const COLLECT_GRACE_MS = 6000;
 /* ------------------------------------------------------------------ */
 
 const MANIFEST_PATH = path.join(ROOT, "public", "audio", "manifest.json");
+const RECORDINGS = path.join(ROOT, "recordings");
+fs.mkdirSync(RECORDINGS, { recursive: true });
 
 let library = { categories: [], sounds: [] };
 
@@ -236,6 +238,7 @@ async function runRound(io, room) {
       bonus,
       total,
       breakdown: sub?.breakdown || null,
+      audioUrl: sub?.audioUrl || null,
       silent: !sub,
     });
   }
@@ -256,6 +259,7 @@ async function runRound(io, room) {
 
 const app = express();
 app.use(express.json());
+app.use("/recordings", express.static(RECORDINGS, { maxAge: "10m" }));
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, sounds: library.sounds.length, rooms: rooms.size });
@@ -384,6 +388,7 @@ io.on("connection", (socket) => {
     room.round = null;
     room.roundNumber = 0;
     room.pool = [];
+    fs.rm(path.join(RECORDINGS, room.code), { recursive: true, force: true }, () => {});
     for (const p of room.players.values()) {
       p.total = 0;
       p.lastScore = null;
@@ -421,9 +426,26 @@ io.on("connection", (socket) => {
     if (!player) return;
     const score = Number(payload.score);
     if (!Number.isFinite(score)) return;
+    let audioUrl = null;
+    const audio = payload.audio;
+    if (audio && audio.byteLength && audio.byteLength < 3_000_000) {
+      try {
+        const ext = String(payload.mime || "").includes("mp4") ? "m4a" : "webm";
+        const dir = path.join(RECORDINGS, room.code);
+        fs.mkdirSync(dir, { recursive: true });
+        const file = `${socket.id}.${ext}`;
+        fs.writeFileSync(path.join(dir, file), Buffer.from(audio));
+        audioUrl = `/recordings/${room.code}/${file}`;
+        console.log(`[audio] take ${file} (${audio.byteLength} bytes)`);
+      } catch (err) {
+        console.error("[audio] could not save take:", err.message);
+      }
+    }
+
     room.round.submissions.set(socket.id, {
       score,
       breakdown: payload.breakdown || null,
+      audioUrl,
     });
     player.submitted = true;
     io.to(room.code).emit("round:collecting", {
@@ -439,6 +461,7 @@ io.on("connection", (socket) => {
       room.token++;
       rooms.delete(room.code);
       io.to(room.code).emit("room:closed", {});
+      fs.rm(path.join(RECORDINGS, room.code), { recursive: true, force: true }, () => {});
       console.log(`[room ${room.code}] closed`);
       return;
     }

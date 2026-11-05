@@ -149,12 +149,14 @@ memory), audio is served as static files, and scoring happens on the client.
 - Real 3D stage (three.js) on the streamer's screen **and** on each player's screen
 - Characters walk to the mic, step forward, jump / clap / collapse on the score
 - Live mic meters, projected name tags, "you" highlight on your own character
+- **Takes play back one by one** before each score is revealed (audio uploaded
+  to `recordings/`, served back, deleted when the room closes)
+- **Attacks counted in the score** (one bark does not pass for three)
 - Score reveal with confetti + bonus
 - Solo mode (the stage itself plays)
 - Sound library + manifest scanner
 
-Not in v0: playback of the recorded takes (we only send scores), attacks in the
-score, the wheel, in-app voice chat.
+Not in v0: the wheel and sabotages, in-app voice chat.
 
 ## How this compares to the real Mimic Party (FoliesApp)
 
@@ -166,15 +168,16 @@ shift, chopped audio, fart). Voice chat goes quiet exactly while a take plays.
 What we already match: one sound for everyone, one countdown, one shot, scoring
 that ignores voice register, public scores, 3D stage, sound packs.
 
-What we still lack, in order of impact:
+What we now match that we did not before: **playback of every take** (recorded
+in the browser, uploaded, played one by one before the score) and **attacks**
+in the scoring.
 
-1. **Playback of each take.** In the real game the room hears every take, one by
-   one, while everyone else is muted. That's the funniest part. It needs audio
-   upload (MediaRecorder → R2) instead of only features.
-2. **Attacks in the score.** Count onsets (one bark ≠ three barks).
-3. **The wheel.** Multipliers and sabotages between rounds — extremely
+What we still lack:
+
+1. **The wheel.** Multipliers and sabotages between rounds — extremely
    clip-friendly.
-4. **In-app voice chat** with auto-mute during playback.
+2. **In-app voice chat** with auto-mute during playback.
+3. **Cloud storage** for takes (currently local disk, cleaned per room).
 
 
 ---

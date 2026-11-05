@@ -15,6 +15,7 @@ import {
   scoreAttempt,
   sfx,
   analyzeSamplesAsync,
+  playClip,
   type Features,
 } from "../lib/audio";
 
@@ -225,18 +226,28 @@ export default function Play() {
 
   useEffect(() => {
     if (phase !== "results" || !results.length) return;
+    let cancelled = false;
     setRevealed(0);
-    const timers = results.map((_, i) =>
-      window.setTimeout(() => setRevealed(i + 1), 500 + i * 700)
-    );
-    return () => timers.forEach((t) => window.clearTimeout(t));
+    (async () => {
+      for (let i = 0; i < results.length; i++) {
+        if (cancelled) return;
+        const r = results[i];
+        if (r.audioUrl) await playClip(r.audioUrl);
+        if (cancelled) return;
+        setRevealed(i + 1);
+        await new Promise((res) => window.setTimeout(res, 900));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [phase, results]);
 
   /* ---------------- record + score ---------------- */
 
   const record = async (ms: number) => {
     try {
-      const { samples, sampleRate } = await recordSamples(ms, (v) => {
+      const { samples, sampleRate, blob } = await recordSamples(ms, (v) => {
         setLevel(v);
         const now = performance.now();
         if (now - lastLevelSent.current > 110) {
@@ -248,9 +259,12 @@ export default function Play() {
       const attempt = await analyzeSamplesAsync(samples, sampleRate);
       const demo = demoFeatures.current;
       const scored = demo ? scoreAttempt(demo, attempt) : { score: 0, breakdown: null };
+      const audio = blob ? await blob.arrayBuffer() : null;
       socket.emit("player:submit", {
         score: scored.score,
         breakdown: scored.breakdown,
+        audio,
+        mime: blob?.type || "",
       });
       setPhase("locked");
     } catch (err) {
@@ -279,6 +293,9 @@ export default function Play() {
   }
 
   const rank = myResult ? results.length - results.indexOf(myResult) : 0;
+  const myIndex = me ? results.findIndex((r) => r.id === me.id) : -1;
+  const myTurn = myIndex >= 0 && revealed > myIndex;
+  const playing = phase === "results" ? results[revealed] || null : null;
   const scenePhase =
     phase === "listen"
       ? "demo"
@@ -407,20 +424,28 @@ export default function Play() {
                 <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted">
                   Round {round}
                 </div>
-                <div className="mt-1 animate-pop text-[4.5rem] font-black leading-none tabular-nums">
-                  {myResult?.total ?? 0}
-                </div>
-                <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted">
-                  {myResult?.bonus ? `+${myResult.bonus} bonus · ` : ""}
-                  points
-                </div>
-                <div className="mt-1 text-xs font-semibold text-cream/70">
-                  {myResult?.breakdown?.heardNote ||
-                    (myResult?.silent ? "No sound heard" : "")}
-                </div>
-                {rank > 0 && (
-                  <div className="mt-2 inline-flex rounded-full bg-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-cream/80">
-                    #{rank} of {results.length}
+                {myTurn ? (
+                  <>
+                    <div className="mt-1 animate-pop text-[4.5rem] font-black leading-none tabular-nums">
+                      {myResult?.total ?? 0}
+                    </div>
+                    <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted">
+                      {myResult?.bonus ? `+${myResult.bonus} bonus · ` : ""}
+                      points
+                    </div>
+                    <div className="mt-1 text-xs font-semibold text-cream/70">
+                      {myResult?.breakdown?.heardNote ||
+                        (myResult?.silent ? "No sound heard" : "")}
+                    </div>
+                    {rank > 0 && (
+                      <div className="mt-2 inline-flex rounded-full bg-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-cream/80">
+                        #{rank} of {results.length}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="mt-2 text-xs font-semibold text-cream/60">
+                    Listening to the takes…
                   </div>
                 )}
               </>
@@ -471,7 +496,7 @@ export default function Play() {
 
             {phase === "results" && (
               <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted">
-                Next round soon…
+                {playing ? `Now playing · ${playing.name}` : "Next round soon…"}
               </p>
             )}
 

@@ -11,6 +11,8 @@ export type Features = {
   energy: number[];
   /** frame is voiced */
   voiced: boolean[];
+  /** number of distinct attacks / hits */
+  onsets: number;
   durationMs: number;
   sampleRate: number;
 };
@@ -19,6 +21,7 @@ export type Breakdown = {
   pitch: number;
   rhythm: number;
   sustain: number;
+  attacks: number;
   heardNote: string;
 };
 
@@ -74,7 +77,7 @@ export function hasMic(): boolean {
 export async function recordSamples(
   ms: number,
   onLevel?: (level: number) => void
-): Promise<{ samples: Float32Array; sampleRate: number }> {
+): Promise<{ samples: Float32Array; sampleRate: number; blob: Blob | null }> {
   const stream = await ensureMic();
   const c = audioContext();
   if (c.state === "suspended") await c.resume();
@@ -86,6 +89,35 @@ export async function recordSamples(
 
   const chunks: Float32Array[] = [];
   let stopped = false;
+
+  let recorder: MediaRecorder | null = null;
+  let clip: Promise<Blob | null> = Promise.resolve(null);
+  if (typeof MediaRecorder !== "undefined") {
+    const types = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+    const mime = types.find((t) => {
+      try {
+        return MediaRecorder.isTypeSupported(t);
+      } catch {
+        return false;
+      }
+    });
+    try {
+      recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      const parts: BlobPart[] = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size) parts.push(e.data);
+      };
+      clip = new Promise((resolve) => {
+        if (!recorder) return resolve(null);
+        recorder.onstop = () =>
+          resolve(new Blob(parts, { type: recorder?.mimeType || "audio/webm" }));
+        recorder.onerror = () => resolve(null);
+      });
+      recorder.start();
+    } catch {
+      recorder = null;
+    }
+  }
 
   processor.onaudioprocess = (ev) => {
     if (stopped) return;
@@ -118,6 +150,14 @@ export async function recordSamples(
   }
   onLevel?.(0);
 
+  if (recorder && recorder.state !== "inactive") {
+    try {
+      recorder.stop();
+    } catch {
+      /* ignore */
+    }
+  }
+
   const total = chunks.reduce((n, ch) => n + ch.length, 0);
   const samples = new Float32Array(total);
   let offset = 0;
@@ -125,7 +165,7 @@ export async function recordSamples(
     samples.set(ch, offset);
     offset += ch.length;
   }
-  return { samples, sampleRate: c.sampleRate };
+  return { samples, sampleRate: c.sampleRate, blob: await clip };
 }
 
 /* ------------------------------------------------------------------ */
@@ -175,6 +215,28 @@ function mixToMono(buffer: AudioBuffer): Float32Array {
   const out = new Float32Array(left.length);
   for (let i = 0; i < left.length; i++) out[i] = (left[i] + right[i]) / 2;
   return out;
+}
+
+/** Play an uploaded take through the unlocked AudioContext. */
+export async function playClip(url: string, maxMs = 9000): Promise<void> {
+  const c = audioContext();
+  if (c.state === "suspended") await c.resume();
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const data = await res.arrayBuffer();
+    const buffer = await c.decodeAudioData(data);
+    await new Promise<void>((resolve) => {
+      const src = c.createBufferSource();
+      src.buffer = buffer;
+      src.connect(c.destination);
+      src.onended = () => resolve();
+      src.start();
+      window.setTimeout(resolve, maxMs);
+    });
+  } catch {
+    /* a broken take should never block the reveal */
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -261,10 +323,23 @@ function finalize(
   const energy = rawEnergy.slice(start, end + 1);
   const voiced = rawVoiced.slice(start, end + 1);
 
+  // count attacks: a sharp rise after a quiet gap, at least 3 frames apart
+  let onsets = 0;
+  let lastOnset = -99;
+  for (let i = 1; i < energy.length; i++) {
+    const prev = energy[i - 1];
+    const cur = energy[i];
+    if (cur > 0.05 && cur > prev * 1.5 && i - lastOnset > 3) {
+      onsets += 1;
+      lastOnset = i;
+    }
+  }
+
   return {
     pitch,
     energy,
     voiced,
+    onsets,
     durationMs: (energy.length * HOP * 1000) / ANALYSIS_SR,
     sampleRate: ANALYSIS_SR,
   };
@@ -375,7 +450,7 @@ export function scoreAttempt(demo: Features, attempt: Features): ScoreResult {
   if (attemptVoiced < 3) {
     return {
       score: 0,
-      breakdown: { pitch: 0, rhythm: 0, sustain: 0, heardNote: "ምንም አልሰማንም" },
+      breakdown: { pitch: 0, rhythm: 0, sustain: 0, attacks: 0, heardNote: "ምንም አልሰማንም" },
     };
   }
 
@@ -424,10 +499,14 @@ export function scoreAttempt(demo: Features, attempt: Features): ScoreResult {
   );
 
   const sustain = Math.min(1, attemptVoiced / demoVoiced);
+  const attacks =
+    demo.onsets === 0
+      ? 1
+      : Math.max(0, 1 - Math.abs(demo.onsets - attempt.onsets) / demo.onsets);
 
   const p = Math.max(0, pitchCorr);
   const r = Math.max(0, rhythmCorr);
-  const raw = 0.6 * p + 0.25 * r + 0.15 * sustain;
+  const raw = 0.5 * p + 0.2 * r + 0.15 * sustain + 0.15 * attacks;
   let score = Math.round(96 * Math.pow(raw, 0.85));
 
   if (attemptVoiced < Math.max(3, demoVoiced * 0.15)) score = Math.min(score, 12);
@@ -448,6 +527,7 @@ export function scoreAttempt(demo: Features, attempt: Features): ScoreResult {
       pitch: Math.round(100 * p),
       rhythm: Math.round(100 * r),
       sustain: Math.round(100 * sustain),
+      attacks: Math.round(100 * attacks),
       heardNote,
     },
   };

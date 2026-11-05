@@ -17,6 +17,7 @@ import {
   recordSamples,
   scoreAttempt,
   sfx,
+  playClip,
   analyzeSamplesAsync,
   ensureMic,
   energyBars,
@@ -41,6 +42,7 @@ export default function Stage() {
   const [expected, setExpected] = useState(0);
   const [results, setResults] = useState<ResultView[]>([]);
   const [revealed, setRevealed] = useState(0);
+  const [playing, setPlaying] = useState<ResultView | null>(null);
   const [qr, setQr] = useState<string>("");
   const [toast, setToast] = useState<string>("");
   const [level, setLevel] = useState(0);
@@ -174,13 +176,20 @@ export default function Stage() {
   /* ---------------- reveal animation ---------------- */
 
   useEffect(() => {
-    revealTimers.current.forEach((t) => window.clearTimeout(t));
-    revealTimers.current = [];
     if (phase !== "results" || !results.length) return;
+    let cancelled = false;
+    setRevealed(0);
+    setPlaying(null);
 
-    results.forEach((r, i) => {
-      const t = window.setTimeout(() => {
+    (async () => {
+      for (let i = 0; i < results.length; i++) {
+        if (cancelled) return;
+        const r = results[i];
+        setPlaying(r);
+        if (r.audioUrl) await playClip(r.audioUrl);
+        if (cancelled) return;
         setRevealed(i + 1);
+        setPlaying(null);
         if (r.total >= 90) {
           sfx("win");
           burst(0.55);
@@ -189,19 +198,16 @@ export default function Stage() {
         } else {
           sfx("reveal");
         }
-        if (i === results.length - 1) {
-          window.setTimeout(() => {
-            burst(1);
-            sfx("win");
-          }, 420);
-        }
-      }, 650 + i * 750);
-      revealTimers.current.push(t);
-    });
+        await new Promise((res) => window.setTimeout(res, 1200));
+      }
+      if (!cancelled) {
+        burst(1);
+        sfx("win");
+      }
+    })();
 
     return () => {
-      revealTimers.current.forEach((t) => window.clearTimeout(t));
-      revealTimers.current = [];
+      cancelled = true;
     };
   }, [phase, results]);
 
@@ -311,6 +317,7 @@ export default function Stage() {
         results={results}
         revealed={revealed}
         solo={solo}
+        playingId={playing?.id}
       />
 
       {/* readability scrim behind the HUD */}

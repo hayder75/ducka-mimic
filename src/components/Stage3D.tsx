@@ -40,6 +40,7 @@ export default function Stage3D({
   solo,
   compact = false,
   meId,
+  playingId,
 }: {
   players: PlayerView[];
   levels: React.MutableRefObject<Record<string, number>>;
@@ -49,14 +50,15 @@ export default function Stage3D({
   solo: boolean;
   compact?: boolean;
   meId?: string;
+  playingId?: string;
 }) {
   const mount = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
   const [loadPct, setLoadPct] = useState(0);
   const labelRefs = useRef(new Map<string, HTMLDivElement>());
 
-  const state = useRef({ players, levels, phase, results, revealed, solo });
-  state.current = { players, levels, phase, results, revealed, solo };
+  const state = useRef({ players, levels, phase, results, revealed, solo, playingId });
+  state.current = { players, levels, phase, results, revealed, solo, playingId };
 
   const actors = useRef(new Map<string, Actor>());
   const template = useRef<THREE.Object3D | null>(null);
@@ -323,31 +325,32 @@ export default function Stage3D({
 
         const spot = idleSpot(i, count, s.solo);
         const recording = s.phase === "record";
-        const toMic = recording && count === 1;
-        const forward = recording && count > 1;
+        const replaying = s.playingId === p.id;
+        const toMic = (recording || replaying) && count === 1;
+        const forward = recording || (replaying && count > 1);
 
         actor.target.copy(spot);
         if (toMic) actor.target.copy(MIC);
         // stay at the mic for the solo reveal
         if (count === 1 && s.phase === "results") actor.target.copy(MIC);
         if (forward) actor.target.z += 0.55;
+        if (replaying) actor.group.scale.setScalar(actor.scale * 1.04);
 
         const phaseScale =
           s.phase === "lobby" || s.phase === "home" ? 0.86 : 1;
-        actor.group.scale.setScalar(actor.scale * phaseScale);
+        if (!replaying) actor.group.scale.setScalar(actor.scale * phaseScale);
 
         const dist = actor.group.position.distanceTo(actor.target);
         actor.group.position.lerp(actor.target, 1 - Math.pow(0.02, dt));
         actor.group.rotation.y = 0;
 
         // animation choice
-        if (recording || s.phase === "demo" || s.phase === "lobby" || s.phase === "home") {
-          if (dist > 0.08 && (toMic || forward)) {
-            play(actor, "Walk");
-          } else if (actor.current === "Walk" || actor.after) {
-            play(actor, "Idle");
-            actor.after = null;
-          }
+        const moving = dist > 0.08 && (toMic || forward);
+        if (moving) {
+          play(actor, "Walk");
+        } else if (actor.current === "Walk") {
+          play(actor, "Idle");
+          actor.after = null;
         }
 
         // speech bounce
