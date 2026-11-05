@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { PlayerView, ResultView } from "../lib/socket";
 
@@ -50,6 +51,8 @@ export default function Stage3D({
   meId?: string;
 }) {
   const mount = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(false);
+  const [loadPct, setLoadPct] = useState(0);
   const labelRefs = useRef(new Map<string, HTMLDivElement>());
 
   const state = useRef({ players, levels, phase, results, revealed, solo });
@@ -242,13 +245,24 @@ export default function Stage3D({
     /* ---------------- load model ---------------- */
 
     let disposed = false;
-    const loader = new FBXLoader();
-    loader.load("/models/alien.fbx", (fbx) => {
-      if (disposed) return;
-      prepare(fbx);
-      template.current = fbx;
-      syncActors();
-    });
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    loader.load(
+      "/models/alien.glb",
+      (gltf) => {
+        if (disposed) return;
+        const model = gltf.scene;
+        (model as any).animations = gltf.animations;
+        prepare(model);
+        template.current = model;
+        syncActors();
+        setReady(true);
+      },
+      (ev) => {
+        if (ev.total) setLoadPct(Math.min(1, ev.loaded / ev.total));
+      },
+      (err) => console.error("[3d] model failed", err)
+    );
 
     /* ---------------- loop ---------------- */
 
@@ -516,6 +530,21 @@ export default function Stage3D({
 
   return (
     <div ref={mount} className="absolute inset-0">
+      {!ready && (
+        <div className="absolute inset-0 z-20 grid place-items-center bg-bg">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-1.5 w-40 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-red transition-[width] duration-200"
+                style={{ width: `${Math.max(6, loadPct * 100)}%` }}
+              />
+            </div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted">
+              Loading stage {Math.round(loadPct * 100)}%
+            </div>
+          </div>
+        </div>
+      )}
       <div className="pointer-events-none absolute inset-0">
         {(phase === "demo" || phase === "countdown" || phase === "record") &&
           labels.map(({ p, r, pending }) => (

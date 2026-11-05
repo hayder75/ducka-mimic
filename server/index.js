@@ -275,7 +275,19 @@ app.post("/api/reload", (_req, res) => {
 
 const dist = path.join(ROOT, "dist");
 if (fs.existsSync(dist)) {
-  app.use(express.static(dist, { maxAge: "1h" }));
+  app.use(
+    express.static(dist, {
+      maxAge: "1y",
+      immutable: true,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        } else if (!filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader("Cache-Control", "public, max-age=604800");
+        }
+      },
+    })
+  );
   app.get("*", (_req, res) => res.sendFile(path.join(dist, "index.html")));
 } else {
   app.get("/", (_req, res) =>
