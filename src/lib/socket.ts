@@ -10,6 +10,7 @@ export type PlayerView = {
   name: string;
   avatar: string;
   avatarSlot?: number;
+  team?: "A" | "B" | null;
   total: number;
   connected: boolean;
   lastScore: number | null;
@@ -41,6 +42,7 @@ export type ResultView = {
     heardNote: string;
   } | null;
   audioUrl?: string | null;
+  team?: "A" | "B" | null;
   sabotage?: { type: string; label: string } | null;
   wheel?: { kind: string; label: string } | null;
   silent: boolean;

@@ -44,6 +44,7 @@ export default function Play() {
     name: string;
     avatar: string;
     avatarSlot?: number;
+    team?: "A" | "B" | null;
   } | null>(null);
   const [players, setPlayers] = useState<PlayerView[]>([]);
   const [sound, setSound] = useState<SoundView | null>(null);
@@ -339,6 +340,15 @@ export default function Play() {
               <Avatar slot={me.avatarSlot} emoji={me.avatar} className="h-6 w-6" />
             </span>
             <span className="max-w-[90px] truncate text-xs font-bold">{me.name}</span>
+            {me.team && (
+              <span
+                className={`rounded px-1 text-[9px] font-black ${
+                  me.team === "A" ? "bg-sky-400/20 text-sky-300" : "bg-red/20 text-red"
+                }`}
+              >
+                {me.team}
+              </span>
+            )}
             <span className="text-xs font-black tabular-nums text-red">{myTotal}</span>
           </div>
         </header>

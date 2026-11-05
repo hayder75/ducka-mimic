@@ -41,6 +41,7 @@ export default function Stage3D({
   compact = false,
   meId,
   playingId,
+  teamMode = false,
 }: {
   players: PlayerView[];
   levels: React.MutableRefObject<Record<string, number>>;
@@ -51,6 +52,7 @@ export default function Stage3D({
   compact?: boolean;
   meId?: string;
   playingId?: string;
+  teamMode?: boolean;
 }) {
   const mount = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);

@@ -44,13 +44,19 @@ const created = await new Promise((r) => stage.emit("stage:create", {}, r));
 check("stage creates a room", created?.ok === true, created?.code);
 const code = created.code;
 
+stage.emit("stage:teams", { enabled: true });
+await wait(200);
+
 const players = [];
+const teamSeen = [];
 for (const name of ["Abel", "Sara"]) {
   const s = await connect();
   const res = await new Promise((r) => s.emit("player:join", { code, name }, r));
   check(`player ${name} joins`, res?.ok === true);
+  teamSeen.push(res.player?.team);
   players.push(s);
 }
+check("teams assigned A/B", teamSeen.includes("A") && teamSeen.includes("B"), teamSeen.join("/"));
 
 // a third player would be rejected with a bad code
 const outsider = await connect();
@@ -95,6 +101,10 @@ check(
 check(
   "scores stored in room",
   (results.players || []).every((p) => p.total >= 0)
+);
+check(
+  "results carry team",
+  list.every((r) => r.team === "A" || r.team === "B")
 );
 
 // wheel: spin, check the broadcast, then verify it is applied next round

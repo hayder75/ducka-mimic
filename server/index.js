@@ -103,6 +103,8 @@ function roomSnapshot(room) {
     state: room.state,
     round: room.roundNumber,
     solo: room.solo,
+    teams: room.teams,
+    teamTotals: teamTotals(room),
     pending: room.pending
       ? {
           kind: room.pending.kind,
@@ -116,6 +118,7 @@ function roomSnapshot(room) {
       name: p.name,
       avatar: p.avatar,
       avatarSlot: p.avatarSlot,
+      team: p.team,
       total: p.total,
       connected: p.connected,
       lastScore: p.lastScore,
@@ -137,6 +140,25 @@ const WHEEL = [
   { kind: "nothing", label: "Nothing" },
 ];
 
+function nextTeam(room) {
+  if (!room.teams) return null;
+  let a = 0;
+  let b = 0;
+  for (const p of room.players.values()) {
+    if (p.team === "A") a += 1;
+    else if (p.team === "B") b += 1;
+  }
+  return a <= b ? "A" : "B";
+}
+
+function teamTotals(room) {
+  const totals = { A: 0, B: 0 };
+  for (const p of room.players.values()) {
+    if (p.team === "A" || p.team === "B") totals[p.team] += p.total;
+  }
+  return totals;
+}
+
 function addPlayer(room, socket, name) {
   const slot = room.players.size % AVATARS.length;
   const player = {
@@ -144,6 +166,7 @@ function addPlayer(room, socket, name) {
     name: (name || "").trim().slice(0, 16) || "Player",
     avatar: AVATARS[slot],
     avatarSlot: slot,
+    team: nextTeam(room),
     total: 0,
     lastScore: null,
     connected: true,
@@ -254,6 +277,7 @@ async function runRound(io, room) {
       avatar: p.avatar,
       avatarSlot: p.avatarSlot,
       avatarSlot: p.avatarSlot,
+      team: p.team,
       score: raw,
       bonus,
       total,
@@ -290,6 +314,7 @@ async function runRound(io, room) {
     sound: publicSound(sound),
     results,
     players: roomSnapshot(room).players,
+    teamTotals: teamTotals(room),
   });
 }
 
@@ -380,6 +405,7 @@ io.on("connection", (socket) => {
         name: player.name,
         avatar: player.avatar,
         avatarSlot: player.avatarSlot,
+        team: player.team,
       },
     });
     io.to(room.code).emit("room:update", roomSnapshot(room));
@@ -476,6 +502,17 @@ io.on("connection", (socket) => {
       p.submitted = false;
     }
     io.to(room.code).emit("round:closed", {});
+    io.to(room.code).emit("room:update", roomSnapshot(room));
+  });
+
+  socket.on("stage:teams", ({ enabled } = {}) => {
+    const room = roomOf();
+    if (!room || role !== "stage") return;
+    room.teams = Boolean(enabled);
+    const list = [...room.players.values()];
+    list.forEach((p, i) => {
+      p.team = room.teams ? (i % 2 === 0 ? "A" : "B") : null;
+    });
     io.to(room.code).emit("room:update", roomSnapshot(room));
   });
 

@@ -47,6 +47,8 @@ export default function Stage() {
   const [wheel, setWheel] = useState<WheelData | null>(null);
   const [wheelOpen, setWheelOpen] = useState(false);
   const [pending, setPending] = useState<any>(null);
+  const [teams, setTeams] = useState(false);
+  const [teamTotals, setTeamTotals] = useState<{ A: number; B: number }>({ A: 0, B: 0 });
   const [qr, setQr] = useState<string>("");
   const [toast, setToast] = useState<string>("");
   const [level, setLevel] = useState(0);
@@ -72,6 +74,8 @@ export default function Stage() {
       setPlayers(snap.players || []);
       setSolo(Boolean(snap.solo));
       setPending(snap.pending || null);
+      setTeams(Boolean(snap.teams));
+      setTeamTotals(snap.teamTotals || { A: 0, B: 0 });
     };
     const onNext = (p: any) => {
       setSound(p.sound);
@@ -124,6 +128,7 @@ export default function Stage() {
     const onResults = (p: any) => {
       setResults(p.results || []);
       setPlayers(p.players || []);
+      setTeamTotals(p.teamTotals || { A: 0, B: 0 });
       setRevealed(0);
       setPhase("results");
     };
@@ -296,6 +301,11 @@ export default function Stage() {
     }
   };
 
+  const toggleTeams = (value: boolean) => {
+    setTeams(value);
+    socket.emit("stage:teams", { enabled: value });
+  };
+
   const skip = () => socket.emit("stage:skip");
   const resetGame = () => socket.emit("stage:reset");
 
@@ -329,6 +339,7 @@ export default function Stage() {
         revealed={revealed}
         solo={solo}
         playingId={playing?.id}
+        teamMode={teams}
       />
 
       {/* readability scrim behind the HUD */}
@@ -344,7 +355,9 @@ export default function Stage() {
           qr={qr}
           players={players}
           solo={solo}
+          teams={teams}
           onSolo={toggleSolo}
+          onTeams={toggleTeams}
           onStart={startRound}
           toast={toast}
         />
@@ -362,7 +375,15 @@ export default function Stage() {
         />
       )}
 
-      {phase === "results" && <ResultsHud results={results} revealed={revealed} />}
+      {phase === "results" && (
+        <ResultsHud
+          results={results}
+          revealed={revealed}
+          playing={playing}
+          teams={teams}
+          teamTotals={teamTotals}
+        />
+      )}
 
       <Footer
         phase={phase}
@@ -517,7 +538,9 @@ function LobbyOverlay({
   qr,
   players,
   solo,
+  teams,
   onSolo,
+  onTeams,
   onStart,
   toast,
 }: {
@@ -525,7 +548,9 @@ function LobbyOverlay({
   qr: string;
   players: PlayerView[];
   solo: boolean;
+  teams: boolean;
   onSolo: (v: boolean) => void;
+  onTeams: (v: boolean) => void;
   onStart: () => void;
   toast: string;
 }) {
@@ -556,7 +581,13 @@ function LobbyOverlay({
         {players.map((p) => (
           <div
             key={p.id}
-            className="flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-1.5 text-[11px] font-bold ring-1 ring-white/10"
+            className={`flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-1.5 text-[11px] font-bold ring-1 ${
+              p.team === "A"
+                ? "ring-sky-400/50"
+                : p.team === "B"
+                ? "ring-red/50"
+                : "ring-white/10"
+            }`}
           >
             <Avatar
               slot={p.avatarSlot}
@@ -565,6 +596,17 @@ function LobbyOverlay({
               emojiClassName="text-sm"
             />
             <span className="max-w-[90px] truncate">{p.name}</span>
+            {p.team && (
+              <span
+                className={`rounded px-1 text-[9px] font-black ${
+                  p.team === "A"
+                    ? "bg-sky-400/20 text-sky-300"
+                    : "bg-red/20 text-red"
+                }`}
+              >
+                {p.team}
+              </span>
+            )}
           </div>
         ))}
         {!players.length && (
@@ -582,17 +624,30 @@ function LobbyOverlay({
         Start round
       </button>
 
-      <button
-        onClick={() => onSolo(!solo)}
-        className={`mt-3 flex items-center gap-2 rounded-full border px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest transition ${
-          solo
-            ? "border-red bg-red/15 text-red"
-            : "border-white/10 text-muted hover:border-white/25"
-        }`}
-      >
-        <span className={`h-1.5 w-1.5 rounded-full ${solo ? "bg-red" : "bg-white/20"}`} />
-        Play solo on this device
-      </button>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          onClick={() => onSolo(!solo)}
+          className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest transition ${
+            solo
+              ? "border-red bg-red/15 text-red"
+              : "border-white/10 text-muted hover:border-white/25"
+          }`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${solo ? "bg-red" : "bg-white/20"}`} />
+          Solo
+        </button>
+        <button
+          onClick={() => onTeams(!teams)}
+          className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest transition ${
+            teams
+              ? "border-gold bg-gold/10 text-gold"
+              : "border-white/10 text-muted hover:border-white/25"
+          }`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${teams ? "bg-gold" : "bg-white/20"}`} />
+          Teams
+        </button>
+      </div>
 
       {toast && (
         <div className="mt-3 rounded-full bg-red/90 px-4 py-1.5 text-xs font-bold text-white">
@@ -676,16 +731,52 @@ function RoundHud({
 function ResultsHud({
   results,
   revealed,
+  playing,
+  teams,
+  teamTotals,
 }: {
   results: ResultView[];
   revealed: number;
+  playing: ResultView | null;
+  teams: boolean;
+  teamTotals: { A: number; B: number };
 }) {
   const all = results.length > 0 && revealed >= results.length;
   const current = revealed > 0 ? results[revealed - 1] : null;
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-[17%] z-20 flex flex-col items-center px-6 text-center">
-      {!current ? (
+    <div className="pointer-events-none absolute inset-x-0 top-[12%] z-20 flex flex-col items-center px-6 text-center">
+      {playing ? (
+        <>
+          <div className="rounded-full bg-red px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-white">
+            Take {Math.min(revealed + 1, results.length)} / {results.length}
+          </div>
+          <div className="mt-2 flex items-center gap-2 text-lg font-bold">
+            <Avatar
+              slot={playing.avatarSlot}
+              emoji={playing.avatar}
+              className="h-7 w-7"
+              emojiClassName="text-xl"
+            />
+            {playing.name}
+          </div>
+          <div className="mt-3 flex h-10 items-end justify-center gap-1">
+            {Array.from({ length: 16 }).map((_, i) => (
+              <div
+                key={i}
+                className="w-1 animate-pulse rounded-full bg-red"
+                style={{
+                  height: `${20 + (Math.abs(Math.sin(i * 7.7) * 100) % 70)}%`,
+                  animationDelay: `${i * 60}ms`,
+                }}
+              />
+            ))}
+          </div>
+          <div className="mt-2 text-[10px] font-bold uppercase tracking-[0.3em] text-muted">
+            Listening…
+          </div>
+        </>
+      ) : !current ? (
         <>
           <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted">
             Scores
@@ -696,7 +787,9 @@ function ResultsHud({
         <>
           {all && (
             <div className="animate-pop rounded-full bg-gold px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-black">
-              Round winner
+              {teams
+                ? `Team ${teamTotals.A >= teamTotals.B ? "A" : "B"} wins`
+                : "Round winner"}
             </div>
           )}
           <div className={`flex items-center gap-2 text-lg font-bold ${all ? "mt-2" : ""}`}>
@@ -722,7 +815,27 @@ function ResultsHud({
               </span>
             )}
           </div>
-
+          {current.breakdown && (
+            <div className="mt-2 text-xs font-semibold text-cream/60">
+              {current.breakdown.heardNote}
+            </div>
+          )}
+          {teams && all && (
+            <div className="mt-2 flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest">
+              <span className="text-sky-300">A {teamTotals.A}</span>
+              <span className="text-red">B {teamTotals.B}</span>
+            </div>
+          )}
+          {current.sabotage && (
+            <div className="mt-2 rounded-full bg-red/20 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-red">
+              🎭 {current.sabotage.label}
+            </div>
+          )}
+          {current.wheel && !current.sabotage && (
+            <div className="mt-2 rounded-full bg-gold/20 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-gold">
+              🎡 {current.wheel.label}
+            </div>
+          )}
         </>
       )}
     </div>
